@@ -43,6 +43,7 @@ export default function FlavorDetail({
   const [newSystemPrompt, setNewSystemPrompt] = useState("");
   const [newUserPrompt, setNewUserPrompt] = useState("");
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Edit step
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -81,9 +82,10 @@ export default function FlavorDetail({
 
   const handleCreateStep = async () => {
     setCreating(true);
+    setError(null);
     const supabase = createClient();
     const nextOrder = steps.length > 0 ? Math.max(...steps.map((s) => s.order_by)) + 1 : 1;
-    await supabase.from("humor_flavor_steps").insert({
+    const { error: insertError } = await supabase.from("humor_flavor_steps").insert({
       humor_flavor_id: flavorId,
       order_by: nextOrder,
       description: newDesc.trim() || null,
@@ -94,13 +96,17 @@ export default function FlavorDetail({
       created_by_user_id: userId,
       modified_by_user_id: userId,
     });
+    setCreating(false);
+    if (insertError) {
+      setError(`Failed to create step: ${insertError.message}`);
+      return;
+    }
     setNewDesc("");
     setNewModelId("");
     setNewTemp("0.7");
     setNewSystemPrompt("");
     setNewUserPrompt("");
     setShowCreate(false);
-    setCreating(false);
     fetchSteps();
   };
 
@@ -123,8 +129,9 @@ export default function FlavorDetail({
   const handleUpdateStep = async () => {
     if (editingId === null) return;
     setSaving(true);
+    setError(null);
     const supabase = createClient();
-    await supabase
+    const { error: updateError } = await supabase
       .from("humor_flavor_steps")
       .update({
         description: editDesc.trim() || null,
@@ -135,8 +142,12 @@ export default function FlavorDetail({
         modified_by_user_id: userId,
       })
       .eq("id", editingId);
-    setEditingId(null);
     setSaving(false);
+    if (updateError) {
+      setError(`Failed to update step: ${updateError.message}`);
+      return;
+    }
+    setEditingId(null);
     fetchSteps();
   };
 
@@ -257,6 +268,13 @@ export default function FlavorDetail({
               {creating ? "Creating..." : "Create Step"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Error display */}
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+          {error}
         </div>
       )}
 

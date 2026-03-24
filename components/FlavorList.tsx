@@ -36,6 +36,7 @@ export default function FlavorList({
   const [editSlug, setEditSlug] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchFlavors = useCallback(async () => {
     setLoading(true);
@@ -71,17 +72,22 @@ export default function FlavorList({
   const handleCreate = async () => {
     if (!newSlug.trim()) return;
     setCreating(true);
+    setError(null);
     const supabase = createClient();
-    await supabase.from("humor_flavors").insert({
+    const { error: insertError } = await supabase.from("humor_flavors").insert({
       slug: newSlug.trim(),
       description: newDesc.trim() || null,
       created_by_user_id: userId,
       modified_by_user_id: userId,
     });
+    setCreating(false);
+    if (insertError) {
+      setError(`Failed to create flavor: ${insertError.message}`);
+      return;
+    }
     setNewSlug("");
     setNewDesc("");
     setShowCreate(false);
-    setCreating(false);
     fetchFlavors();
   };
 
@@ -102,13 +108,18 @@ export default function FlavorList({
   const handleUpdate = async () => {
     if (editingId === null || !editSlug.trim()) return;
     setSaving(true);
+    setError(null);
     const supabase = createClient();
-    await supabase
+    const { error: updateError } = await supabase
       .from("humor_flavors")
       .update({ slug: editSlug.trim(), description: editDesc.trim() || null, modified_by_user_id: userId })
       .eq("id", editingId);
-    setEditingId(null);
     setSaving(false);
+    if (updateError) {
+      setError(`Failed to update flavor: ${updateError.message}`);
+      return;
+    }
+    setEditingId(null);
     fetchFlavors();
   };
 
@@ -165,6 +176,13 @@ export default function FlavorList({
               {creating ? "Creating..." : "Create"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Error display */}
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+          {error}
         </div>
       )}
 
