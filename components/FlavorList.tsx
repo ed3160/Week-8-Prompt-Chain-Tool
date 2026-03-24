@@ -74,21 +74,26 @@ export default function FlavorList({
     setCreating(true);
     setError(null);
     const supabase = createClient();
-    const { error: insertError } = await supabase.from("humor_flavors").insert({
+    const { data: inserted, error: insertError } = await supabase.from("humor_flavors").insert({
       slug: newSlug.trim(),
       description: newDesc.trim() || null,
       created_by_user_id: userId,
       modified_by_user_id: userId,
-    });
+    }).select("id, slug").single();
     setCreating(false);
     if (insertError) {
       setError(`Failed to create flavor: ${insertError.message}`);
       return;
     }
+    const slug = newSlug.trim();
     setNewSlug("");
     setNewDesc("");
     setShowCreate(false);
-    fetchFlavors();
+    if (inserted) {
+      onSelect(inserted.id, inserted.slug);
+    } else {
+      fetchFlavors();
+    }
   };
 
   const handleDelete = async (id: number) => {

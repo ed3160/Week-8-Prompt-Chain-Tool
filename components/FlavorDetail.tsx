@@ -211,6 +211,149 @@ export default function FlavorDetail({
     fetchSteps();
   };
 
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+
+  const applyTemplate = async (templateName: "standard" | "minimal") => {
+    setApplyingTemplate(true);
+    setError(null);
+    const supabase = createClient();
+
+    const templates: Record<string, Array<{
+      order_by: number;
+      description: string;
+      llm_model_id: number;
+      llm_temperature: number;
+      humor_flavor_step_type_id: number;
+      llm_input_type_id: number;
+      llm_output_type_id: number;
+      llm_system_prompt: string;
+      llm_user_prompt: string;
+    }>> = {
+      standard: [
+        {
+          order_by: 1,
+          description: "Celebrity & Brand Recognition",
+          llm_model_id: 14, // Gemini 2.5 Flash
+          llm_temperature: 0.7,
+          humor_flavor_step_type_id: 1,
+          llm_input_type_id: 1, // image-and-text
+          llm_output_type_id: 1, // string
+          llm_system_prompt: "You are an expert at identifying celebrities, public figures, brands, and cultural references in images. You only respond in JSON.",
+          llm_user_prompt: `Identify any famous or recognizable content in this image including people, shows, movies, locations, brands, events, or memes.
+
+Respond in JSON format:
+{
+  "content": [
+    {
+      "name": "Full name",
+      "type": "celebrity" | "politician" | "cartoon_character" | "tv_show" | "movie" | "location" | "brand" | "meme" | "other",
+      "confidence": 0-100,
+      "description": "Brief context"
+    }
+  ],
+  "scene_context": "Overall description if from famous media or a significant event"
+}
+
+If nothing recognizable, return: { "content": [], "scene_context": "" }
+Only respond in JSON.`,
+        },
+        {
+          order_by: 2,
+          description: "Image Description",
+          llm_model_id: 14,
+          llm_temperature: 0.7,
+          humor_flavor_step_type_id: 2,
+          llm_input_type_id: 1, // image-and-text
+          llm_output_type_id: 1, // string
+          llm_system_prompt: "You are a detailed image description assistant. Describe images vividly and accurately.",
+          llm_user_prompt: `Using this recognition context: \${step1Output}
+
+Describe this image in rich detail:
+- The subject's demeanor and expression
+- How the background relates to the foreground
+- Any notable buildings, locations, or settings
+- If from a movie, show, or cultural event, include that context
+
+If the subject is not human, anthropomorphize it. Note any potentially humorous elements. Keep under 150 words.`,
+        },
+        {
+          order_by: 3,
+          description: "Caption Generation",
+          llm_model_id: 17, // GPT 5 Mini
+          llm_temperature: 1.0,
+          humor_flavor_step_type_id: 3,
+          llm_input_type_id: 2, // text-only
+          llm_output_type_id: 2, // array
+          llm_system_prompt: `You are a witty caption writer. Generate short, punchy captions that are funny and relatable.
+
+Return ONLY a valid JSON array of strings. No markdown, no explanation, no code fences.`,
+          llm_user_prompt: `Image description: \${step2Output}
+
+People/brands identified: \${step1Output}
+
+Here is some additional context for the image, if available:
+\${imageAdditionalContext}
+
+Write 10 short, funny captions for this image.
+
+Rules:
+- Under 12 words each
+- Sharp, ironic, and punchy like a meme page
+- No long setups or explanations
+- No "When you X but Y" formula
+
+Return ONLY a JSON array of 10 caption strings.`,
+        },
+      ],
+      minimal: [
+        {
+          order_by: 1,
+          description: "Describe Image",
+          llm_model_id: 14, // Gemini 2.5 Flash
+          llm_temperature: 0.7,
+          humor_flavor_step_type_id: 2,
+          llm_input_type_id: 1, // image-and-text
+          llm_output_type_id: 1, // string
+          llm_system_prompt: "You are a concise image description assistant.",
+          llm_user_prompt: `Describe this image in 2-3 sentences. Focus on the subject, their expression, and the setting. Note anything funny or unusual.`,
+        },
+        {
+          order_by: 2,
+          description: "Generate Captions",
+          llm_model_id: 17, // GPT 5 Mini
+          llm_temperature: 1.0,
+          humor_flavor_step_type_id: 3,
+          llm_input_type_id: 2, // text-only
+          llm_output_type_id: 2, // array
+          llm_system_prompt: `You are a funny caption writer. Return ONLY a valid JSON array of strings. No markdown, no explanation.`,
+          llm_user_prompt: `Image description: \${step1Output}
+
+Additional context: \${imageAdditionalContext}
+
+Write 5 short, funny captions for this image. Keep each under 10 words.
+
+Return ONLY a JSON array of 5 caption strings.`,
+        },
+      ],
+    };
+
+    const templateSteps = templates[templateName];
+    const rows = templateSteps.map((s) => ({
+      ...s,
+      humor_flavor_id: flavorId,
+      created_by_user_id: userId,
+      modified_by_user_id: userId,
+    }));
+
+    const { error: insertError } = await supabase.from("humor_flavor_steps").insert(rows);
+    setApplyingTemplate(false);
+    if (insertError) {
+      setError(`Failed to apply template: ${insertError.message}`);
+      return;
+    }
+    fetchSteps();
+  };
+
   const modelName = (id: number | null) => {
     if (!id) return "-";
     const m = models.find((m) => m.id === id);
@@ -364,9 +507,61 @@ export default function FlavorDetail({
       {loading ? (
         <p className="text-neutral-500 dark:text-neutral-400">Loading steps...</p>
       ) : steps.length === 0 ? (
-        <p className="text-neutral-500 dark:text-neutral-400">
-          No steps yet. Add a step to build the prompt chain.
-        </p>
+        <div className="space-y-6">
+          <div className="text-center py-8">
+            <p className="text-neutral-500 dark:text-neutral-400 mb-2">
+              No steps yet. Pick a template to get started, or add steps manually.
+            </p>
+            <p className="text-xs text-neutral-400 dark:text-neutral-500">
+              Each flavor needs at least one step that processes the image and one that outputs captions as a JSON array.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Standard 3-step template */}
+            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-5">
+              <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+                Standard (3 steps)
+              </h4>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                The recommended setup. Recognizes celebrities/brands, describes the image, then generates 10 captions.
+              </p>
+              <ol className="text-xs text-neutral-500 dark:text-neutral-400 space-y-1 mb-4 list-decimal list-inside">
+                <li>Celebrity & Brand Recognition (Gemini Flash, image input)</li>
+                <li>Image Description (Gemini Flash, image input)</li>
+                <li>Caption Generation (GPT 5 Mini, text input, array output)</li>
+              </ol>
+              <button
+                onClick={() => applyTemplate("standard")}
+                disabled={applyingTemplate}
+                className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
+              >
+                {applyingTemplate ? "Applying..." : "Use Standard Template"}
+              </button>
+            </div>
+
+            {/* Minimal 2-step template */}
+            <div className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-5">
+              <h4 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
+                Minimal (2 steps)
+              </h4>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                A simpler setup. Describes the image, then generates 5 captions. Faster but less context-aware.
+              </p>
+              <ol className="text-xs text-neutral-500 dark:text-neutral-400 space-y-1 mb-4 list-decimal list-inside">
+                <li>Image Description (Gemini Flash, image input)</li>
+                <li>Caption Generation (GPT 5 Mini, text input, array output)</li>
+              </ol>
+              <button
+                onClick={() => applyTemplate("minimal")}
+                disabled={applyingTemplate}
+                className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-neutral-700 dark:bg-neutral-600 text-white hover:bg-neutral-800 dark:hover:bg-neutral-500 disabled:opacity-50 transition-colors cursor-pointer disabled:cursor-default"
+              >
+                {applyingTemplate ? "Applying..." : "Use Minimal Template"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="space-y-3">
           {steps.map((s, idx) => (
