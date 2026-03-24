@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ThemeToggle } from "./ThemeProvider";
 import FlavorList from "./FlavorList";
@@ -9,6 +9,12 @@ import FlavorTest from "./FlavorTest";
 import CaptionViewer from "./CaptionViewer";
 
 type View = "list" | "detail" | "test" | "captions";
+
+interface NavState {
+  view: View;
+  flavorId: number | null;
+  flavorSlug: string;
+}
 
 export default function AppShell({
   userId,
@@ -21,6 +27,7 @@ export default function AppShell({
   const [view, setView] = useState<View>("list");
   const [selectedFlavorId, setSelectedFlavorId] = useState<number | null>(null);
   const [selectedFlavorSlug, setSelectedFlavorSlug] = useState<string>("");
+  const skipPush = useRef(false);
 
   useEffect(() => {
     const check = async () => {
@@ -38,6 +45,45 @@ export default function AppShell({
     };
     check();
   }, [userId]);
+
+  // Push browser history when view changes
+  useEffect(() => {
+    if (skipPush.current) {
+      skipPush.current = false;
+      return;
+    }
+    const state: NavState = { view, flavorId: selectedFlavorId, flavorSlug: selectedFlavorSlug };
+    if (view === "list") {
+      window.history.replaceState(state, "", "/");
+    } else {
+      window.history.pushState(state, "", `/?view=${view}&id=${selectedFlavorId}`);
+    }
+  }, [view, selectedFlavorId, selectedFlavorSlug]);
+
+  // Handle browser back/forward
+  useEffect(() => {
+    const handlePop = (e: PopStateEvent) => {
+      const state = e.state as NavState | null;
+      skipPush.current = true;
+      if (state && state.view) {
+        setView(state.view);
+        setSelectedFlavorId(state.flavorId);
+        setSelectedFlavorSlug(state.flavorSlug ?? "");
+      } else {
+        setView("list");
+        setSelectedFlavorId(null);
+        setSelectedFlavorSlug("");
+      }
+    };
+    window.addEventListener("popstate", handlePop);
+    // Set initial state
+    window.history.replaceState(
+      { view: "list", flavorId: null, flavorSlug: "" } as NavState,
+      "",
+      "/"
+    );
+    return () => window.removeEventListener("popstate", handlePop);
+  }, []);
 
   const handleLogout = async () => {
     const supabase = createClient();
@@ -64,8 +110,7 @@ export default function AppShell({
   }, []);
 
   const goBack = useCallback(() => {
-    setView("list");
-    setSelectedFlavorId(null);
+    window.history.back();
   }, []);
 
   if (authorized === null) {
@@ -111,7 +156,10 @@ export default function AppShell({
                 &larr; Back
               </button>
             )}
-            <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+            <h1
+              className="text-lg font-bold text-neutral-900 dark:text-neutral-100 cursor-pointer"
+              onClick={() => { setView("list"); setSelectedFlavorId(null); }}
+            >
               Flavor Studio
             </h1>
           </div>
