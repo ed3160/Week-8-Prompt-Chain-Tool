@@ -12,6 +12,9 @@ interface FlavorStep {
   llm_temperature: number | null;
   llm_system_prompt: string | null;
   llm_user_prompt: string | null;
+  humor_flavor_step_type_id: number | null;
+  llm_input_type_id: number;
+  llm_output_type_id: number;
 }
 
 interface LlmModel {
@@ -19,6 +22,15 @@ interface LlmModel {
   name: string;
   provider_model_id: string | null;
 }
+
+interface LookupItem {
+  id: number;
+  slug: string;
+  description: string | null;
+}
+
+const INPUT_CLASS =
+  "w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400";
 
 export default function FlavorDetail({
   userId,
@@ -33,6 +45,9 @@ export default function FlavorDetail({
 }) {
   const [steps, setSteps] = useState<FlavorStep[]>([]);
   const [models, setModels] = useState<LlmModel[]>([]);
+  const [inputTypes, setInputTypes] = useState<LookupItem[]>([]);
+  const [outputTypes, setOutputTypes] = useState<LookupItem[]>([]);
+  const [stepTypes, setStepTypes] = useState<LookupItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Create step form
@@ -42,6 +57,9 @@ export default function FlavorDetail({
   const [newTemp, setNewTemp] = useState("0.7");
   const [newSystemPrompt, setNewSystemPrompt] = useState("");
   const [newUserPrompt, setNewUserPrompt] = useState("");
+  const [newStepTypeId, setNewStepTypeId] = useState<string>("3");
+  const [newInputTypeId, setNewInputTypeId] = useState<string>("2");
+  const [newOutputTypeId, setNewOutputTypeId] = useState<string>("1");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +70,9 @@ export default function FlavorDetail({
   const [editTemp, setEditTemp] = useState("0.7");
   const [editSystemPrompt, setEditSystemPrompt] = useState("");
   const [editUserPrompt, setEditUserPrompt] = useState("");
+  const [editStepTypeId, setEditStepTypeId] = useState<string>("3");
+  const [editInputTypeId, setEditInputTypeId] = useState<string>("2");
+  const [editOutputTypeId, setEditOutputTypeId] = useState<string>("1");
   const [saving, setSaving] = useState(false);
 
   const fetchSteps = useCallback(async () => {
@@ -59,28 +80,37 @@ export default function FlavorDetail({
     const supabase = createClient();
     const { data } = await supabase
       .from("humor_flavor_steps")
-      .select("id, humor_flavor_id, order_by, description, llm_model_id, llm_temperature, llm_system_prompt, llm_user_prompt")
+      .select("id, humor_flavor_id, order_by, description, llm_model_id, llm_temperature, llm_system_prompt, llm_user_prompt, humor_flavor_step_type_id, llm_input_type_id, llm_output_type_id")
       .eq("humor_flavor_id", flavorId)
       .order("order_by", { ascending: true });
     setSteps((data ?? []) as FlavorStep[]);
     setLoading(false);
   }, [flavorId]);
 
-  const fetchModels = useCallback(async () => {
+  const fetchLookups = useCallback(async () => {
     const supabase = createClient();
-    const { data } = await supabase
-      .from("llm_models")
-      .select("id, name, provider_model_id")
-      .order("name", { ascending: true });
-    setModels((data ?? []) as LlmModel[]);
+    const [modelsRes, inputRes, outputRes, stepTypesRes] = await Promise.all([
+      supabase.from("llm_models").select("id, name, provider_model_id").order("name"),
+      supabase.from("llm_input_types").select("id, slug, description").order("id"),
+      supabase.from("llm_output_types").select("id, slug, description").order("id"),
+      supabase.from("humor_flavor_step_types").select("id, slug, description").order("id"),
+    ]);
+    setModels((modelsRes.data ?? []) as LlmModel[]);
+    setInputTypes((inputRes.data ?? []) as LookupItem[]);
+    setOutputTypes((outputRes.data ?? []) as LookupItem[]);
+    setStepTypes((stepTypesRes.data ?? []) as LookupItem[]);
   }, []);
 
   useEffect(() => {
     fetchSteps();
-    fetchModels();
-  }, [fetchSteps, fetchModels]);
+    fetchLookups();
+  }, [fetchSteps, fetchLookups]);
 
   const handleCreateStep = async () => {
+    if (!newInputTypeId || !newOutputTypeId) {
+      setError("Input type and output type are required.");
+      return;
+    }
     setCreating(true);
     setError(null);
     const supabase = createClient();
@@ -93,6 +123,9 @@ export default function FlavorDetail({
       llm_temperature: newTemp ? parseFloat(newTemp) : null,
       llm_system_prompt: newSystemPrompt.trim() || null,
       llm_user_prompt: newUserPrompt.trim() || null,
+      humor_flavor_step_type_id: newStepTypeId ? parseInt(newStepTypeId) : null,
+      llm_input_type_id: parseInt(newInputTypeId),
+      llm_output_type_id: parseInt(newOutputTypeId),
       created_by_user_id: userId,
       modified_by_user_id: userId,
     });
@@ -106,6 +139,9 @@ export default function FlavorDetail({
     setNewTemp("0.7");
     setNewSystemPrompt("");
     setNewUserPrompt("");
+    setNewStepTypeId("3");
+    setNewInputTypeId("2");
+    setNewOutputTypeId("1");
     setShowCreate(false);
     fetchSteps();
   };
@@ -124,6 +160,9 @@ export default function FlavorDetail({
     setEditTemp(s.llm_temperature?.toString() ?? "0.7");
     setEditSystemPrompt(s.llm_system_prompt ?? "");
     setEditUserPrompt(s.llm_user_prompt ?? "");
+    setEditStepTypeId(s.humor_flavor_step_type_id?.toString() ?? "3");
+    setEditInputTypeId(s.llm_input_type_id.toString());
+    setEditOutputTypeId(s.llm_output_type_id.toString());
   };
 
   const handleUpdateStep = async () => {
@@ -139,6 +178,9 @@ export default function FlavorDetail({
         llm_temperature: editTemp ? parseFloat(editTemp) : null,
         llm_system_prompt: editSystemPrompt.trim() || null,
         llm_user_prompt: editUserPrompt.trim() || null,
+        humor_flavor_step_type_id: editStepTypeId ? parseInt(editStepTypeId) : null,
+        llm_input_type_id: parseInt(editInputTypeId),
+        llm_output_type_id: parseInt(editOutputTypeId),
         modified_by_user_id: userId,
       })
       .eq("id", editingId);
@@ -175,6 +217,49 @@ export default function FlavorDetail({
     return m ? m.name : `#${id}`;
   };
 
+  const lookupName = (items: LookupItem[], id: number | null) => {
+    if (!id) return "-";
+    const item = items.find((i) => i.id === id);
+    return item ? item.slug : `#${id}`;
+  };
+
+  const typeSelectFields = (
+    stepTypeVal: string,
+    setStepType: (v: string) => void,
+    inputTypeVal: string,
+    setInputType: (v: string) => void,
+    outputTypeVal: string,
+    setOutputType: (v: string) => void,
+  ) => (
+    <div className="grid grid-cols-3 gap-3">
+      <div>
+        <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">Step Type</label>
+        <select value={stepTypeVal} onChange={(e) => setStepType(e.target.value)} className={INPUT_CLASS}>
+          <option value="">None</option>
+          {stepTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.slug}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">Input Type *</label>
+        <select value={inputTypeVal} onChange={(e) => setInputType(e.target.value)} className={INPUT_CLASS}>
+          {inputTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.slug}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">Output Type *</label>
+        <select value={outputTypeVal} onChange={(e) => setOutputType(e.target.value)} className={INPUT_CLASS}>
+          {outputTypes.map((t) => (
+            <option key={t.id} value={t.id}>{t.slug}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -208,17 +293,13 @@ export default function FlavorDetail({
                 value={newDesc}
                 onChange={(e) => setNewDesc(e.target.value)}
                 placeholder="What this step does"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                className={INPUT_CLASS}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">LLM Model</label>
-                <select
-                  value={newModelId}
-                  onChange={(e) => setNewModelId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
-                >
+                <select value={newModelId} onChange={(e) => setNewModelId(e.target.value)} className={INPUT_CLASS}>
                   <option value="">None</option>
                   {models.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -236,10 +317,11 @@ export default function FlavorDetail({
                   max="2"
                   value={newTemp}
                   onChange={(e) => setNewTemp(e.target.value)}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                  className={INPUT_CLASS}
                 />
               </div>
             </div>
+            {typeSelectFields(newStepTypeId, setNewStepTypeId, newInputTypeId, setNewInputTypeId, newOutputTypeId, setNewOutputTypeId)}
             <div>
               <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">System Prompt</label>
               <textarea
@@ -247,7 +329,7 @@ export default function FlavorDetail({
                 onChange={(e) => setNewSystemPrompt(e.target.value)}
                 rows={3}
                 placeholder="System instructions for the LLM"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 font-mono"
+                className={INPUT_CLASS + " font-mono"}
               />
             </div>
             <div>
@@ -257,7 +339,7 @@ export default function FlavorDetail({
                 onChange={(e) => setNewUserPrompt(e.target.value)}
                 rows={3}
                 placeholder="User prompt template"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 font-mono"
+                className={INPUT_CLASS + " font-mono"}
               />
             </div>
             <button
@@ -299,16 +381,12 @@ export default function FlavorDetail({
                     value={editDesc}
                     onChange={(e) => setEditDesc(e.target.value)}
                     placeholder="Description"
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                    className={INPUT_CLASS}
                   />
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">LLM Model</label>
-                      <select
-                        value={editModelId}
-                        onChange={(e) => setEditModelId(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
-                      >
+                      <select value={editModelId} onChange={(e) => setEditModelId(e.target.value)} className={INPUT_CLASS}>
                         <option value="">None</option>
                         {models.map((m) => (
                           <option key={m.id} value={m.id}>
@@ -326,17 +404,18 @@ export default function FlavorDetail({
                         max="2"
                         value={editTemp}
                         onChange={(e) => setEditTemp(e.target.value)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400"
+                        className={INPUT_CLASS}
                       />
                     </div>
                   </div>
+                  {typeSelectFields(editStepTypeId, setEditStepTypeId, editInputTypeId, setEditInputTypeId, editOutputTypeId, setEditOutputTypeId)}
                   <div>
                     <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">System Prompt</label>
                     <textarea
                       value={editSystemPrompt}
                       onChange={(e) => setEditSystemPrompt(e.target.value)}
                       rows={4}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 font-mono"
+                      className={INPUT_CLASS + " font-mono"}
                     />
                   </div>
                   <div>
@@ -345,7 +424,7 @@ export default function FlavorDetail({
                       value={editUserPrompt}
                       onChange={(e) => setEditUserPrompt(e.target.value)}
                       rows={4}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 font-mono"
+                      className={INPUT_CLASS + " font-mono"}
                     />
                   </div>
                   <div className="flex gap-2">
@@ -376,9 +455,12 @@ export default function FlavorDetail({
                           {s.description || `Step ${s.order_by}`}
                         </h4>
                       </div>
-                      <div className="flex gap-4 mt-2 ml-10 text-xs text-neutral-400 dark:text-neutral-500">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 ml-10 text-xs text-neutral-400 dark:text-neutral-500">
                         <span>Model: {modelName(s.llm_model_id)}</span>
                         <span>Temp: {s.llm_temperature ?? "-"}</span>
+                        <span>Type: {lookupName(stepTypes, s.humor_flavor_step_type_id)}</span>
+                        <span>In: {lookupName(inputTypes, s.llm_input_type_id)}</span>
+                        <span>Out: {lookupName(outputTypes, s.llm_output_type_id)}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
