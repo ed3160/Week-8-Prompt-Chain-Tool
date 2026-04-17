@@ -36,6 +36,7 @@ export default function FlavorList({
   const [editSlug, setEditSlug] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [saving, setSaving] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchFlavors = useCallback(async () => {
@@ -94,6 +95,81 @@ export default function FlavorList({
     } else {
       fetchFlavors();
     }
+  };
+
+  const handleDuplicate = async (f: HumorFlavor) => {
+    const suggested = `${f.slug}-copy`;
+    const input = window.prompt(
+      `Duplicate "${f.slug}" — enter a new unique slug for the copy:`,
+      suggested,
+    );
+    if (input === null) return;
+    const trimmedSlug = input.trim();
+    if (!trimmedSlug) {
+      setError("Slug cannot be empty.");
+      return;
+    }
+    if (trimmedSlug === f.slug) {
+      setError("New slug must be different from the original.");
+      return;
+    }
+
+    setDuplicatingId(f.id);
+    setError(null);
+    const supabase = createClient();
+
+    const { data: newFlavor, error: insertError } = await supabase
+      .from("humor_flavors")
+      .insert({
+        slug: trimmedSlug,
+        description: f.description,
+        created_by_user_id: userId,
+        modified_by_user_id: userId,
+      })
+      .select("id, slug")
+      .single();
+
+    if (insertError || !newFlavor) {
+      setDuplicatingId(null);
+      setError(`Failed to duplicate flavor: ${insertError?.message ?? "unknown error"}`);
+      return;
+    }
+
+    const { data: originalSteps, error: stepsError } = await supabase
+      .from("humor_flavor_steps")
+      .select(
+        "order_by, description, llm_model_id, llm_temperature, llm_system_prompt, llm_user_prompt, humor_flavor_step_type_id, llm_input_type_id, llm_output_type_id",
+      )
+      .eq("humor_flavor_id", f.id)
+      .order("order_by", { ascending: true });
+
+    if (stepsError) {
+      setDuplicatingId(null);
+      setError(`Flavor duplicated, but failed to read original steps: ${stepsError.message}`);
+      fetchFlavors();
+      return;
+    }
+
+    if (originalSteps && originalSteps.length > 0) {
+      const newSteps = originalSteps.map((s) => ({
+        ...s,
+        humor_flavor_id: newFlavor.id,
+        created_by_user_id: userId,
+        modified_by_user_id: userId,
+      }));
+      const { error: copyStepsError } = await supabase
+        .from("humor_flavor_steps")
+        .insert(newSteps);
+      if (copyStepsError) {
+        setDuplicatingId(null);
+        setError(`Flavor duplicated, but failed to copy steps: ${copyStepsError.message}`);
+        fetchFlavors();
+        return;
+      }
+    }
+
+    setDuplicatingId(null);
+    fetchFlavors();
   };
 
   const handleDelete = async (id: number) => {
@@ -285,6 +361,13 @@ export default function FlavorList({
                       className="px-3 py-1.5 text-xs font-medium rounded-lg bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 cursor-pointer transition-colors"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => handleDuplicate(f)}
+                      disabled={duplicatingId === f.id}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900 disabled:opacity-50 cursor-pointer disabled:cursor-default transition-colors"
+                    >
+                      {duplicatingId === f.id ? "Duplicating..." : "Duplicate"}
                     </button>
                     <button
                       onClick={() => handleDelete(f.id)}
