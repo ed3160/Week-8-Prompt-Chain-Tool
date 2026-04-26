@@ -28,6 +28,7 @@ export default function AppShell({
   const [selectedFlavorId, setSelectedFlavorId] = useState<number | null>(null);
   const [selectedFlavorSlug, setSelectedFlavorSlug] = useState<string>("");
   const skipPush = useRef(false);
+  const isFirstNavEffect = useRef(true);
 
   useEffect(() => {
     const check = async () => {
@@ -46,22 +47,41 @@ export default function AppShell({
     check();
   }, [userId]);
 
-  // Push browser history when view changes
+  // Hydrate state from URL on mount and seed history (deep-link support)
   useEffect(() => {
-    if (skipPush.current) {
-      skipPush.current = false;
-      return;
-    }
-    const state: NavState = { view, flavorId: selectedFlavorId, flavorSlug: selectedFlavorSlug };
-    if (view === "list") {
-      window.history.replaceState(state, "", "/");
-    } else {
-      window.history.pushState(state, "", `/?view=${view}&id=${selectedFlavorId}`);
-    }
-  }, [view, selectedFlavorId, selectedFlavorSlug]);
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get("view");
+    const id = params.get("id");
+    const validViews: View[] = ["detail", "test", "captions"];
+    let initialState: NavState = { view: "list", flavorId: null, flavorSlug: "" };
 
-  // Handle browser back/forward
-  useEffect(() => {
+    if (v && (validViews as string[]).includes(v) && id) {
+      const flavorId = Number(id);
+      if (Number.isInteger(flavorId) && flavorId > 0) {
+        skipPush.current = true;
+        setView(v as View);
+        setSelectedFlavorId(flavorId);
+        initialState = { view: v as View, flavorId, flavorSlug: "" };
+        const supabase = createClient();
+        supabase
+          .from("humor_flavors")
+          .select("slug")
+          .eq("id", flavorId)
+          .single()
+          .then(({ data }) => {
+            if (data?.slug) setSelectedFlavorSlug(data.slug);
+          });
+      }
+    }
+
+    window.history.replaceState(
+      initialState,
+      "",
+      initialState.view === "list"
+        ? "/"
+        : `/?view=${initialState.view}&id=${initialState.flavorId}`,
+    );
+
     const handlePop = (e: PopStateEvent) => {
       const state = e.state as NavState | null;
       skipPush.current = true;
@@ -76,14 +96,26 @@ export default function AppShell({
       }
     };
     window.addEventListener("popstate", handlePop);
-    // Set initial state
-    window.history.replaceState(
-      { view: "list", flavorId: null, flavorSlug: "" } as NavState,
-      "",
-      "/"
-    );
     return () => window.removeEventListener("popstate", handlePop);
   }, []);
+
+  // Push browser history when view changes (skip the initial mount so URL params survive)
+  useEffect(() => {
+    if (isFirstNavEffect.current) {
+      isFirstNavEffect.current = false;
+      return;
+    }
+    if (skipPush.current) {
+      skipPush.current = false;
+      return;
+    }
+    const state: NavState = { view, flavorId: selectedFlavorId, flavorSlug: selectedFlavorSlug };
+    if (view === "list") {
+      window.history.replaceState(state, "", "/");
+    } else {
+      window.history.pushState(state, "", `/?view=${view}&id=${selectedFlavorId}`);
+    }
+  }, [view, selectedFlavorId, selectedFlavorSlug]);
 
   const handleLogout = async () => {
     const supabase = createClient();
