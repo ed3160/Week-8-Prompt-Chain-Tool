@@ -5,10 +5,12 @@ import { createClient } from "@/lib/supabase/client";
 export default function LoginPage() {
   const handleLogin = async () => {
     const supabase = createClient();
+    const path = window.location.pathname + window.location.search;
+    const next = path && path !== "/" ? `?next=${encodeURIComponent(path)}` : "";
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback${next}`,
       },
     });
   };
